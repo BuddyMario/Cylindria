@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Python Debugger: Python File",
+            "type": "debugpy",
+            "module": "cylindria",
+//            "module": "src.api.main",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "request": "launch",
+            "args": ["--port", "8100"],
+            "env": {
+                    // Optional: if your ComfyUI is behind Basic Auth
+                    // "COMFY_BASIC_USER": "myuser",
+                    // "COMFY_BASIC_PASS": "mypassword"
+                    }
+        }
+    ]
+}

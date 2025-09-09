@@ -1,0 +1,13 @@
+Cylindria is a reverse-proxy running on ComfyUI servers and providing secure communication to outside world.
+
+Cylindria is implemented with Python uvicorn. It's using RESTful interface with HTTP protocol.
+
+Supported command line arguments:
+
+--port
+Indicates the port number Cylindria will use for outside communication.
+
+Supported endpoints:
+ServerStatus : GET command that returns current status of ComfyUI server
+StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI.
+JobStatus: jobstatus/{job id}/ : GET command returns status of particular job.
