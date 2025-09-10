@@ -1,0 +1,9 @@
+/workspace/Cylindria/cylindria.log {
+size 10M
+rotate 10
+daily
+nocompress
+missingok
+notifempty
+copytruncate
+}
