@@ -9,5 +9,16 @@ Indicates the port number Cylindria will use for outside communication.
 
 Supported endpoints:
 ServerStatus : GET command that returns current status of ComfyUI server
-StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI.
+StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI. When Cylindria receibes a wrokflow it will modify it by putting all nodes under "prompt" key.
 JobStatus: jobstatus/{job id}/ : GET command returns status of particular job.
+
+TODO:
+Add support for API key authentication.
+
+
+Cylindria Tester is a Python Tkiner application with sole purpose to test Cylindria functionality. 
+Cylindria Tester has a text window for entering Cylindria's URL and port number.
+Cylindria Tester has several buttons that correspond to different endpoints supported by Cylindria. It also has a text window that display results of the commands.
+"Server status" button sends ServerStatus request to Cylindria and displays its response in the text window.
+"Start Job" will prompt the user to open a file containing ComfyUI workflow in JSON format. It will generate a random unique job ID. Then it will send StartJob request to Cylindria and display its response in the text window.
+"Job Status" button will prompt the user to enter job ID. It will send JobStatus request to Cylindria and display its response in the text window. It will put the last sent job ID as the default value into Job Id prompt.

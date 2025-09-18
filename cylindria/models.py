@@ -14,4 +14,4 @@ class JobStatusResponse(BaseModel):
     submitted_at: datetime
     updated_at: datetime
     detail: str | None = None
-
+    prompt_id: str | None = None

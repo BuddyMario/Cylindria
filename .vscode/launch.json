@@ -8,7 +8,7 @@
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "request": "launch",
-            "args": ["--port", "8100"],
+            "args": ["--port", "8100", "--dev"],
             "env": {
                     // Optional: if your ComfyUI is behind Basic Auth
                     // "COMFY_BASIC_USER": "myuser",
