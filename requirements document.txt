@@ -12,6 +12,9 @@ ServerStatus : GET command that returns current status of ComfyUI server
 StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI. When Cylindria receibes a wrokflow it will modify it by putting all nodes under "prompt" key.
 JobStatus: jobstatus/{job id}/ : GET command returns status of particular job.
 
+
+Cylindria maintains a background WebSocket connection to ComfyUI to watch job status updates; messages are handled internally and do not reach external clients.
+
 TODO:
 Add support for API key authentication.
 

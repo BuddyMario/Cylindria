@@ -8,6 +8,7 @@ This initial cut provides:
   - `GET /serverstatus` – basic health/status, attempts to ping ComfyUI.
   - `PUT /startjob/{job_id}/` – accepts a workflow payload and forwards to ComfyUI (best-effort; stub-friendly).
   - `GET /jobstatus/{job_id}/` – returns the known status of a submitted job.
+
 - CLI argument `--port` to choose the listening port (default `8000`).
 - Optional API-key protection via the `CYLINDRIA_API_KEY` environment variable.
 
@@ -49,9 +50,9 @@ python cylindria_tester.py
 
 - `GET /jobstatus/{job_id}/`
   - Returns the last known state for the job, e.g. `{ job_id, state, submitted_at, updated_at }`.
-
 ## Implementation Notes
 
+- Cylindria keeps a background WebSocket listener to ingest ComfyUI status events; the data is used to update stored job details.
 - Networking to ComfyUI uses `httpx` with timeouts; failures do not crash the API and are surfaced in responses.
 - A simple in-memory job store is used for initial tracking. This will reset on restart; you can swap this for a persistent store later.
 - Security is API-key based and optional for a lightweight initial version.

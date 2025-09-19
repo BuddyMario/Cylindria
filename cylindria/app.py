@@ -1,4 +1,5 @@
 from typing import Any
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, Header, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -52,11 +53,19 @@ def _normalize_workflow_payload(workflow: dict[str, Any]) -> dict[str, Any]:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
-    app = FastAPI(title="Cylindria", version="0.1.0")
-
     job_store = JobStore()
     dev_dir = settings.dev_save_dir if getattr(settings, "dev_mode", False) else None
     comfy = ComfyClient(base_url=settings.comfyui_base_url, job_store=job_store, dev_save_dir=dev_dir)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        await comfy.ensure_ws_listener()
+        try:
+            yield
+        finally:
+            await comfy.stop_ws_listener()
+
+    app = FastAPI(title="Cylindria", version="0.1.0", lifespan=lifespan)
 
     @app.get("/serverstatus")
     async def server_status(api_key: str | None = Depends(require_api_key), settings: Settings = Depends(get_settings)):

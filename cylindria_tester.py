@@ -49,6 +49,9 @@ class CylindriaTesterApp:
         self.btn_job = tk.Button(btns, text="Job Status", command=self.on_job_status)
         self.btn_job.pack(side=tk.LEFT, padx=(0, 6))
 
+        self.btn_clear = tk.Button(btns, text="Clear Output", command=self.on_clear_output)
+        self.btn_clear.pack(side=tk.LEFT, padx=(0, 6))
+
         # Output text area
         self.output = ScrolledText(root, height=20, undo=False, wrap=tk.WORD)
         self.output.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
@@ -71,6 +74,9 @@ class CylindriaTesterApp:
     def log(self, text: str) -> None:
         self.output.insert(tk.END, text + "\n")
         self.output.see(tk.END)
+
+    def on_clear_output(self) -> None:
+        self.output.delete('1.0', tk.END)
 
     def log_json(self, title: str, data) -> None:
         self.log(f"=== {title} ===")
