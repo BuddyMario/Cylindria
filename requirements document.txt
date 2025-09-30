@@ -9,7 +9,8 @@ Indicates the port number Cylindria will use for outside communication.
 
 Supported endpoints:
 ServerStatus : GET command that returns current status of ComfyUI server
-StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI. When Cylindria receibes a wrokflow it will modify it by putting all nodes under "prompt" key.
+StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI. When Cylindria receives a workflow it will modify it by putting all nodes under "prompt" key. This endpoint has optional parameter "GpuId". Default value of GPuId is 0. Acceptable range of GpuId is 0 to 7. use of GpuId is currently not implemented.
+
 JobStatus: jobstatus/{job id}/ : GET command returns status of particular job.
 
 

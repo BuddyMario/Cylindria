@@ -1,7 +1,7 @@
 from typing import Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends, Header, HTTPException, status
+from fastapi import FastAPI, Depends, Header, HTTPException, status, Query
 from fastapi.responses import JSONResponse
 from .config import Settings, get_settings
 from .security import require_api_key
@@ -76,8 +76,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "reachable": reachable,
         }
 
+
     @app.put("/startjob/{job_id}/", response_model=StartJobResponse)
-    async def start_job(job_id: str, workflow: dict[str, Any], api_key: str | None = Depends(require_api_key)):
+    async def start_job(
+        job_id: str,
+        workflow: dict[str, Any],
+        gpu_id: int = Query(0, ge=0, le=7, alias="GpuId"),
+        api_key: str | None = Depends(require_api_key),
+    ):
         normalized_workflow = _normalize_workflow_payload(workflow)
         accepted, detail = await comfy.submit_workflow(job_id, normalized_workflow)
         return StartJobResponse(job_id=job_id, accepted=accepted, detail=detail)
