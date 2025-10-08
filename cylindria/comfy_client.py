@@ -197,6 +197,8 @@ class ComfyClient:
                             progress_percent = computed_percent * 0.40 + 40
                         elif node_value==85:
                             progress_percent = computed_percent * 0.20 + 80
+                        elif total_value < 10:
+                            progress_percent = computed_percent * 0.50
                         
                         progress_percent = clamp_percent(progress_percent)
 
