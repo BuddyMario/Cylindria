@@ -26,8 +26,10 @@ class ComfyClient:
         self.dev_save_dir = Path(dev_save_dir) if dev_save_dir else None
         self._ws_url = self._build_ws_url(self.base_url)
         self._ws_task: asyncio.Task | None = None
+        self._queue_poll_task: asyncio.Task | None = None
         self._listener_lock = asyncio.Lock()
         self._ws_log_dir = (self.dev_save_dir / "ws_logs") if self.dev_save_dir else None
+        self._last_running_prompt: str | None = None
 
     @staticmethod
     def _extract_prompt_id(response: httpx.Response) -> str | None:
@@ -86,15 +88,29 @@ class ComfyClient:
                 return
             self._ws_task = asyncio.create_task(self._ws_listener_loop())
 
+            # Also start queue polling
+            if self._queue_poll_task and not self._queue_poll_task.done():
+                return
+            self._queue_poll_task = asyncio.create_task(self._queue_polling_loop())
+
     async def stop_ws_listener(self) -> None:
         async with self._listener_lock:
-            task = self._ws_task
+            ws_task = self._ws_task
             self._ws_task = None
-        if not task:
-            return
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+            queue_task = self._queue_poll_task
+            self._queue_poll_task = None
+
+        # Cancel WS task
+        if ws_task:
+            ws_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ws_task
+
+        # Cancel queue polling task
+        if queue_task:
+            queue_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await queue_task
 
     async def _ws_listener_loop(self) -> None:
         backoff = 1.0
@@ -211,10 +227,18 @@ class ComfyClient:
             lowered = detail.lower()
             if any(token in lowered for token in ("start", "running", "execute")):
                 new_state = "running"
+                # Track this prompt as the last running one for queue polling
+                self._last_running_prompt = prompt_id
             elif any(token in lowered for token in ("complete", "finish", "done")):
                 new_state = "completed"
+                # Clear the last running prompt when completed
+                if self._last_running_prompt == prompt_id:
+                    self._last_running_prompt = None
             elif any(token in lowered for token in ("fail", "error", "abort")):
                 new_state = "failed"
+                # Clear the last running prompt on failure
+                if self._last_running_prompt == prompt_id:
+                    self._last_running_prompt = None
 
         self.job_store.upsert(
             job.job_id,
@@ -263,4 +287,49 @@ class ComfyClient:
             self.job_store.upsert(job_id, state='submitted', detail=detail)
 
         return accepted, detail
+
+    async def _poll_queue(self) -> None:
+        """Poll ComfyUI queue endpoint to check for job status updates."""
+        try:
+            resp = await self._client.get(f"{self.base_url}/queue")
+            if resp.status_code != 200:
+                return
+
+            queue_data = resp.json()
+            if not isinstance(queue_data, dict):
+                return
+
+            # Extract running prompt from queue data
+            running = queue_data.get("queue_running", [])
+            if not isinstance(running, list):
+                running = []
+
+            current_running_prompt = running[0] if running else None
+
+            # Check if running prompt has changed
+            if current_running_prompt != self._last_running_prompt:
+                # If there was a previously running prompt and it's no longer running,
+                # mark the job associated with it as completed
+                if self._last_running_prompt:
+                    job = self.job_store.find_by_prompt_id(self._last_running_prompt)
+                    if job and job.state == "running":
+                        self.job_store.upsert(
+                            job.job_id,
+                            state="completed",
+                            detail="Completed via queue polling",
+                            progress=100
+                        )
+
+                # Update the last running prompt
+                self._last_running_prompt = current_running_prompt
+
+        except Exception:
+            # Silently ignore polling errors
+            pass
+
+    async def _queue_polling_loop(self) -> None:
+        """Periodically poll the queue endpoint every 5 seconds."""
+        while True:
+            await self._poll_queue()
+            await asyncio.sleep(5.0)
 
