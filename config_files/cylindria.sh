@@ -14,8 +14,8 @@ done
 #    exit 0
 #fi
 
-## Activate the venv
-#. /venv/main/bin/activate
+# Activate the venv
+. /venv/main/bin/activate
 
 # Wait for provisioning to complete
 
@@ -31,9 +31,6 @@ git config --file $GIT_CONFIG_GLOBAL --add safe.directory '*'
 export COMFYUI_BASE_URL="http://127.0.0.1:18188"
 
 # Launch Cylindria
-cd ${WORKSPACE}/Cylindria
-python -m cylindria --port 8100 > cylindria.log 2>&1 < /dev/null 
+cd /workspace/Cylindria
+python3 -m cylindria --port 8100 
 
-LD_PRELOAD=libtcmalloc_minimal.so.4 \
-        python main.py \
-        ${COMFYUI_ARGS:---disable-auto-launch --port 18188 --enable-cors-header} 2>&1 | tee -a "/var/log/portal/${PROC_NAME}.log"
