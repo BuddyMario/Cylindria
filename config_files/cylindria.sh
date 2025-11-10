@@ -28,9 +28,15 @@ done
 export GIT_CONFIG_GLOBAL=/tmp/temporary-git-config
 git config --file $GIT_CONFIG_GLOBAL --add safe.directory '*'
 
+# count available CUDA devices
+CYLINDRIA_NUM_GPUS=$(nvidia-smi -L | wc -l)
+
 export COMFYUI_BASE_URL="http://127.0.0.1:18188"
+# Set CYLINDRIA_NUM_GPUS before launching (defaults to 1 if unset)
+export CYLINDRIA_NUM_GPUS="${CYLINDRIA_NUM_GPUS:-1}"
+
+echo "Launching Cylindria with $CYLINDRIA_NUM_GPUS GPUs"
 
 # Launch Cylindria
 cd /workspace/Cylindria
-python3 -m cylindria --port 8100 
-
+python3 -m cylindria --port 8100 --numberOfGpus "${CYLINDRIA_NUM_GPUS}"

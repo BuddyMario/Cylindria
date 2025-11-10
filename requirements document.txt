@@ -1,4 +1,4 @@
-Cylindria is a reverse-proxy running on ComfyUI servers and providing secure communication to outside world.
+Cylindria is a reverse-proxy running on ComfyUI servers and providing secure communication to outside world. Cylindria supports up to 8 ComfyUI servers running on one system with separate GPU for each ComfyUI instance. Each ComfyUI system is running on a separate port number starting from 8188. For example if there are 3 ComfyUI instances running on the system then they will be accessible on ports 8188, 8189 and 8190. 
 
 Cylindria is implemented with Python uvicorn. It's using RESTful interface with HTTP protocol.
 
@@ -6,19 +6,17 @@ Supported command line arguments:
 
 --port
 Indicates the port number Cylindria will use for outside communication.
+--numberOfGpus
+Indicates the number of ComfyUI running on this system. Default is 1.  Acceptable range is 1 to 8.
 
 Supported endpoints:
-ServerStatus : GET command that returns current status of ComfyUI server
-StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI. When Cylindria receives a workflow it will modify it by putting all nodes under "prompt" key. This endpoint has optional parameter "GpuId". Default value of GPuId is 0. Acceptable range of GpuId is 0 to 7. use of GpuId is currently not implemented.
+ServerStatus : GET command that returns current status of ComfyUI server. Parameter "GpuId" indicates which ComfyUI instance to query. Acceptable range of GpuId is 0 to (numberOfGpus - 1). Default value of GpuId is 0.
+StartJob: startjob/{job id}/ : PUT command receives workflow and sends it to ComfyUI. When Cylindria receives a workflow it will modify it by putting all nodes under "prompt" key. This endpoint has optional parameter "GpuId". Default value of GPuId is 0. Acceptable range of GpuId is 0 to 7. Cylindria keeps track of which job was sent to which ComfyUI instance. 
 
-JobStatus: jobstatus/{job id}/ : GET command returns status of particular job.
+JobStatus: jobstatus/{job id}/ : GET command returns status of particular job. Cylindria knows which ComfyUI instance is handling which job. If job ID is not found Cylindria will return "job not found" error.
 
-
-Cylindria maintains a background WebSocket connection to ComfyUI to watch job status updates; messages are handled internally and do not reach external clients.
-
-TODO:
-Add support for API key authentication.
-
+Cylindria maintains a background WebSocket connection to all ComfyUI instances to watch job status updates; messages are handled internally and do not reach external clients. Cylindria is using "progress" type messages from websocket connection to update job status.
+To increase reliability of job status updates Cylindria is using ComfyUI's "queue" endpoint. It will periodically poll "queue" endpoint to get job status updates. The polling interval is 5 seconds. If the current running prompt does not match the last known running prompt Cylindria will update job status to "completed". If there is no running prompt then Cylindria will mark the last job as "completed".
 
 Cylindria Tester is a Python Tkiner application with sole purpose to test Cylindria functionality. 
 Cylindria Tester has a text window for entering Cylindria's URL and port number.
@@ -26,3 +24,6 @@ Cylindria Tester has several buttons that correspond to different endpoints supp
 "Server status" button sends ServerStatus request to Cylindria and displays its response in the text window.
 "Start Job" will prompt the user to open a file containing ComfyUI workflow in JSON format. It will generate a random unique job ID. Then it will send StartJob request to Cylindria and display its response in the text window.
 "Job Status" button will prompt the user to enter job ID. It will send JobStatus request to Cylindria and display its response in the text window. It will put the last sent job ID as the default value into Job Id prompt.
+
+TODO:
+Add support for API key authentication.

@@ -36,6 +36,11 @@ class CylindriaTesterApp:
         self.entry_port.grid(row=0, column=3, sticky=tk.W, padx=(4, 0))
         self.entry_port.insert(0, "8100")
 
+        tk.Label(top, text="Gpu Id:").grid(row=1, column=0, sticky=tk.W, pady=(4, 0))
+        self.entry_gpu = tk.Entry(top, width=8)
+        self.entry_gpu.grid(row=1, column=1, sticky=tk.W, padx=(4, 0), pady=(4, 0))
+        self.entry_gpu.insert(0, "0")
+
         # Buttons frame
         btns = tk.Frame(root)
         btns.pack(fill=tk.X, padx=8, pady=(0, 4))
@@ -71,6 +76,20 @@ class CylindriaTesterApp:
             return None
         return f"{raw}:{port}"
 
+    def gpu_id_value(self) -> Optional[int]:
+        raw = (self.entry_gpu.get() or "").strip()
+        if raw == "":
+            return 0
+        try:
+            value = int(raw)
+        except ValueError:
+            messagebox.showerror("Input Error", "Gpu Id must be an integer between 0 and 7.")
+            return None
+        if not (0 <= value <= 7):
+            messagebox.showerror("Input Error", "Gpu Id must be between 0 and 7.")
+            return None
+        return value
+
     def log(self, text: str) -> None:
         self.output.insert(tk.END, text + "\n")
         self.output.see(tk.END)
@@ -91,7 +110,10 @@ class CylindriaTesterApp:
         base = self.base_url()
         if not base:
             return
-        url = f"{base}/serverstatus"
+        gpu_id = self.gpu_id_value()
+        if gpu_id is None:
+            return
+        url = f"{base}/serverstatus?GpuId={gpu_id}"
         self.log(f"GET {url}")
         try:
             r = self.client.get(url)
@@ -104,6 +126,9 @@ class CylindriaTesterApp:
     def on_start_job(self) -> None:
         base = self.base_url()
         if not base:
+            return
+        gpu_id = self.gpu_id_value()
+        if gpu_id is None:
             return
         file_path = filedialog.askopenfilename(
             title="Select ComfyUI Workflow (JSON)",
@@ -120,7 +145,7 @@ class CylindriaTesterApp:
             return
 
         job_id = uuid.uuid4().hex
-        url = f"{base}/startjob/{job_id}/"
+        url = f"{base}/startjob/{job_id}/?GpuId={gpu_id}"
         self.log(f"PUT {url}\nBody: workflow from {file_path}")
         try:
             r = self.client.put(url, json=workflow)

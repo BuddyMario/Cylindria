@@ -31,6 +31,7 @@ class JobStore:
         detail: str | None = None,
         prompt_id: str | None = None,
         progress: float | int | None = None,
+        gpu_id: int | None = None,
     ) -> JobStatusResponse:
         now = datetime.now(timezone.utc)
         normalized_progress = self._normalize_progress(progress)
@@ -40,6 +41,8 @@ class JobStore:
             js = self._jobs[job_id]
             js.state = state
             js.updated_at = now
+            if gpu_id is not None:
+                js.gpu_id = gpu_id
             if detail is not None:
                 js.detail = detail
             if prompt_id is not None:
@@ -53,6 +56,7 @@ class JobStore:
             js = JobStatusResponse(
                 job_id=job_id,
                 state=state,
+                gpu_id=gpu_id,
                 submitted_at=now,
                 updated_at=now,
                 progress=initial_progress,
@@ -65,10 +69,13 @@ class JobStore:
     def get(self, job_id: str) -> Optional[JobStatusResponse]:
         return self._jobs.get(job_id)
 
-    def find_by_prompt_id(self, prompt_id: str) -> Optional[JobStatusResponse]:
+    def find_by_prompt_id(self, prompt_id: str, gpu_id: int | None = None) -> Optional[JobStatusResponse]:
         for job in self._jobs.values():
-            if job.prompt_id == prompt_id:
-                return job
+            if job.prompt_id != prompt_id:
+                continue
+            if gpu_id is not None and job.gpu_id is not None and job.gpu_id != gpu_id:
+                continue
+            return job
         return None
 
 

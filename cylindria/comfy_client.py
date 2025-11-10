@@ -19,16 +19,26 @@ from .jobs import JobStore
 class ComfyClient:
     """Thin helper to talk to ComfyUI, with graceful fallbacks."""
 
-    def __init__(self, base_url: str, job_store: JobStore, dev_save_dir: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        job_store: JobStore,
+        gpu_id: int = 0,
+        dev_save_dir: Optional[str] = None,
+    ) -> None:
         self.base_url = base_url.rstrip('/')
         self.job_store = job_store
+        self.gpu_id = gpu_id
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(2.0, connect=1.0))
         self.dev_save_dir = Path(dev_save_dir) if dev_save_dir else None
         self._ws_url = self._build_ws_url(self.base_url)
         self._ws_task: asyncio.Task | None = None
         self._queue_poll_task: asyncio.Task | None = None
         self._listener_lock = asyncio.Lock()
-        self._ws_log_dir = (self.dev_save_dir / "ws_logs") if self.dev_save_dir else None
+        if self.dev_save_dir:
+            self._ws_log_dir = self.dev_save_dir / f"ws_logs_gpu_{self.gpu_id}"
+        else:
+            self._ws_log_dir = None
         self._last_running_prompt: str | None = None
 
     @staticmethod
@@ -167,7 +177,7 @@ class ComfyClient:
         if not isinstance(prompt_id, str):
             return
 
-        job = self.job_store.find_by_prompt_id(prompt_id)
+        job = self.job_store.find_by_prompt_id(prompt_id, gpu_id=self.gpu_id)
         if job is None:
             return
 
@@ -246,6 +256,7 @@ class ComfyClient:
             detail=detail,
             prompt_id=prompt_id,
             progress=progress_percent,
+            gpu_id=self.gpu_id,
         )
 
     async def ping(self) -> bool:
@@ -257,7 +268,7 @@ class ComfyClient:
 
     async def submit_workflow(self, job_id: str, workflow: dict[str, Any]) -> Tuple[bool, str | None]:
         """Try to forward a workflow to ComfyUI."""
-        self.job_store.upsert(job_id, state='queued', detail=None)
+        self.job_store.upsert(job_id, state='queued', detail=None, gpu_id=self.gpu_id)
 
         if self.dev_save_dir is not None:
             try:
@@ -276,15 +287,21 @@ class ComfyClient:
             if resp.status_code >= 400:
                 accepted = False
                 detail = f"ComfyUI rejected workflow (HTTP {resp.status_code})"
-                self.job_store.upsert(job_id, state='failed', detail=detail)
+                self.job_store.upsert(job_id, state='failed', detail=detail, gpu_id=self.gpu_id)
             else:
                 prompt_id = self._extract_prompt_id(resp)
                 detail = 'Forwarded to ComfyUI'
-                self.job_store.upsert(job_id, state='submitted', detail=detail, prompt_id=prompt_id)
+                self.job_store.upsert(
+                    job_id,
+                    state='submitted',
+                    detail=detail,
+                    prompt_id=prompt_id,
+                    gpu_id=self.gpu_id,
+                )
         except Exception as exc:
             accepted = True
             detail = f"Stored locally; forwarding failed: {exc.__class__.__name__}"
-            self.job_store.upsert(job_id, state='submitted', detail=detail)
+            self.job_store.upsert(job_id, state='submitted', detail=detail, gpu_id=self.gpu_id)
 
         return accepted, detail
 
@@ -311,13 +328,14 @@ class ComfyClient:
                 # If there was a previously running prompt and it's no longer running,
                 # mark the job associated with it as completed
                 if self._last_running_prompt:
-                    job = self.job_store.find_by_prompt_id(self._last_running_prompt)
+                    job = self.job_store.find_by_prompt_id(self._last_running_prompt, gpu_id=self.gpu_id)
                     if job and job.state == "running":
                         self.job_store.upsert(
                             job.job_id,
                             state="completed",
                             detail="Completed via queue polling",
-                            progress=100
+                            progress=100,
+                            gpu_id=self.gpu_id,
                         )
 
                 # Update the last running prompt

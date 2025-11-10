@@ -6,11 +6,13 @@ class StartJobResponse(BaseModel):
     job_id: str
     accepted: bool = True
     detail: str | None = None
+    gpu_id: int | None = Field(default=None, ge=0, le=7)
 
 
 class JobStatusResponse(BaseModel):
     job_id: str
     state: str = Field(description="queued|submitted|running|completed|failed|unknown")
+    gpu_id: int | None = Field(default=None, ge=0, le=7)
     submitted_at: datetime
     updated_at: datetime
     progress: int = Field(default=0, ge=0, le=100)
