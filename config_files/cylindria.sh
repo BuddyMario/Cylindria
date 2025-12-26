@@ -39,4 +39,5 @@ echo "Launching Cylindria with $CYLINDRIA_NUM_GPUS GPUs"
 
 # Launch Cylindria
 cd /workspace/Cylindria
-python3 -m cylindria --port 8100 --numberOfGpus "${CYLINDRIA_NUM_GPUS}"
+#python3 -m cylindria --port 8100 --numberOfGpus "${CYLINDRIA_NUM_GPUS}"
+python3 -m cylindria --port 8100 --numberOfGpus "${CYLINDRIA_NUM_GPUS}" >>/workspace/Cylindria/cylindria.log 2>&1
