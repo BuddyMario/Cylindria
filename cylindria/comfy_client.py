@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
-import base64
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -14,6 +15,9 @@ import websockets
 from websockets.exceptions import ConnectionClosed
 
 from .jobs import JobStore
+
+
+logger = logging.getLogger(__name__)
 
 
 class ComfyClient:
@@ -266,9 +270,13 @@ class ComfyClient:
         except Exception:
             return False
 
+    _SUBMIT_MAX_ATTEMPTS = 3
+    _SUBMIT_RETRY_DELAY = 0.5  # seconds between retries
+
     async def submit_workflow(self, job_id: str, workflow: dict[str, Any]) -> Tuple[bool, str | None]:
-        """Try to forward a workflow to ComfyUI."""
+        """Try to forward a workflow to ComfyUI, retrying on transient errors."""
         self.job_store.upsert(job_id, state='queued', detail=None, gpu_id=self.gpu_id)
+        logger.info("Submitting workflow job_id=%s gpu_id=%s", job_id, self.gpu_id)
 
         if self.dev_save_dir is not None:
             try:
@@ -278,17 +286,25 @@ class ComfyClient:
             except Exception:
                 pass
 
-        accepted = True
-        detail: str | None = None
-        prompt_id: str | None = None
-        try:
-            url = f"{self.base_url}/prompt"
-            resp = await self._client.post(url, json=workflow)
-            if resp.status_code >= 400:
-                accepted = False
-                detail = f"ComfyUI rejected workflow (HTTP {resp.status_code})"
-                self.job_store.upsert(job_id, state='failed', detail=detail, gpu_id=self.gpu_id)
-            else:
+        url = f"{self.base_url}/prompt"
+        last_exc: Exception | None = None
+        for attempt in range(1, self._SUBMIT_MAX_ATTEMPTS + 1):
+            try:
+                resp = await self._client.post(url, json=workflow)
+                logger.info(
+                    "ComfyUI response job_id=%s gpu_id=%s attempt=%s status=%s body=%s",
+                    job_id,
+                    self.gpu_id,
+                    attempt,
+                    resp.status_code,
+                    resp.text,
+                )
+                if resp.status_code >= 400:
+                    # ComfyUI rejected the workflow — no point retrying
+                    detail = f"ComfyUI rejected workflow (HTTP {resp.status_code})"
+                    self.job_store.upsert(job_id, state='failed', detail=detail, gpu_id=self.gpu_id)
+                    return False, detail
+
                 prompt_id = self._extract_prompt_id(resp)
                 detail = 'Forwarded to ComfyUI'
                 self.job_store.upsert(
@@ -298,12 +314,24 @@ class ComfyClient:
                     prompt_id=prompt_id,
                     gpu_id=self.gpu_id,
                 )
-        except Exception as exc:
-            accepted = True
-            detail = f"Stored locally; forwarding failed: {exc.__class__.__name__}"
-            self.job_store.upsert(job_id, state='submitted', detail=detail, gpu_id=self.gpu_id)
+                return True, detail
 
-        return accepted, detail
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Submit attempt %s/%s failed job_id=%s gpu_id=%s: %s",
+                    attempt,
+                    self._SUBMIT_MAX_ATTEMPTS,
+                    job_id,
+                    self.gpu_id,
+                    exc,
+                )
+                if attempt < self._SUBMIT_MAX_ATTEMPTS:
+                    await asyncio.sleep(self._SUBMIT_RETRY_DELAY)
+
+        detail = f"ComfyUI unreachable after {self._SUBMIT_MAX_ATTEMPTS} attempts: {last_exc!r}"
+        self.job_store.upsert(job_id, state='failed', detail=detail, gpu_id=self.gpu_id)
+        return False, detail
 
     async def _poll_queue(self) -> None:
         """Poll ComfyUI queue endpoint to check for job status updates."""
