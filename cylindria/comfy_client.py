@@ -349,7 +349,8 @@ class ComfyClient:
             if not isinstance(running, list):
                 running = []
 
-            current_running_prompt = running[0] if running else None
+            running_entry = running[0] if running else None
+            current_running_prompt = running_entry[1] if isinstance(running_entry, (list, tuple)) and len(running_entry) > 1 else None
 
             # Check if running prompt has changed
             if current_running_prompt != self._last_running_prompt:
@@ -357,14 +358,30 @@ class ComfyClient:
                 # mark the job associated with it as completed
                 if self._last_running_prompt:
                     job = self.job_store.find_by_prompt_id(self._last_running_prompt, gpu_id=self.gpu_id)
-                    if job and job.state == "running":
-                        self.job_store.upsert(
-                            job.job_id,
-                            state="completed",
-                            detail="Completed via queue polling",
-                            progress=100,
-                            gpu_id=self.gpu_id,
-                        )
+                    if job and job.state in ("running", "submitted"):
+                        if (job.progress or 0) >= 80:
+                            logger.warning(
+                                "Queue poll: job_id=%s prompt_id=%s gpu_id=%s completed at %s%% progress",
+                                job.job_id, self._last_running_prompt, self.gpu_id, job.progress or 0,
+                            )
+                            self.job_store.upsert(
+                                job.job_id,
+                                state="completed",
+                                detail="Completed via queue polling",
+                                progress=100,
+                                gpu_id=self.gpu_id,
+                            )
+                        else:
+                            logger.warning(
+                                "Queue poll: job_id=%s prompt_id=%s gpu_id=%s disappeared from queue with only %s%% progress — marking failed",
+                                job.job_id, self._last_running_prompt, self.gpu_id, job.progress or 0,
+                            )
+                            self.job_store.upsert(
+                                job.job_id,
+                                state="failed",
+                                detail=f"Job disappeared from queue with only {job.progress or 0}% progress",
+                                gpu_id=self.gpu_id,
+                            )
 
                 # Update the last running prompt
                 self._last_running_prompt = current_running_prompt

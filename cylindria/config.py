@@ -16,7 +16,7 @@ def _int_from_env(var_name: str, default: int) -> int:
 
 @dataclass
 class Settings:
-    comfyui_base_url: str = os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    comfyui_base_url: str = os.getenv("COMFYUI_BASE_URL", "http://127.0.0.1:8188").rstrip("/")
     number_of_gpus: int = _int_from_env("CYLINDRIA_NUM_GPUS", 1)
     api_key: str | None = os.getenv("CYLINDRIA_API_KEY")
     # Dev mode: save workflow JSONs before forwarding to ComfyUI

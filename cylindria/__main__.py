@@ -1,4 +1,5 @@
 import argparse
+import logging
 import uvicorn
 
 from .app import create_app
@@ -23,6 +24,8 @@ def main():
         settings.dev_mode = True
     if args.dev_save_dir:
         settings.dev_save_dir = args.dev_save_dir
+
+    logging.basicConfig(level=logging.INFO)
 
     app = create_app(settings)
     uvicorn.run(app, host=args.host, port=args.port)

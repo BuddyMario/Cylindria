@@ -136,6 +136,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         client = comfy_clients[gpu_id]
         normalized_workflow = _normalize_workflow_payload(workflow)
         accepted, detail = await client.submit_workflow(job_id, normalized_workflow)
+        if not accepted:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
         return StartJobResponse(job_id=job_id, accepted=accepted, detail=detail, gpu_id=gpu_id)
 
     @app.get("/jobstatus/{job_id}/", response_model=JobStatusResponse)
