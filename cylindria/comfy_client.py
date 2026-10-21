@@ -221,12 +221,12 @@ class ComfyClient:
                     ):
                         capped_current = max(0.0, min(current_value, total_value))
                         computed_percent = (capped_current / total_value) * 100.0
-                        if node_value==57:
-                            progress_percent = computed_percent * 0.40
-                        elif node_value==58:
-                            progress_percent = computed_percent * 0.40 + 40
-                        elif node_value==85:
-                            progress_percent = computed_percent * 0.20 + 80
+                        if node_value==21:
+                            progress_percent = computed_percent * 0.30
+                        elif node_value==16:
+                            progress_percent = computed_percent * 0.60 + 30
+                        elif node_value==25:
+                            progress_percent = computed_percent * 0.10 + 90
                         elif total_value < 10:
                             progress_percent = computed_percent * 0.50
                         
@@ -237,22 +237,6 @@ class ComfyClient:
         new_state = job.state
         if progress_percent is not None:
             new_state = "completed" if progress_percent >= 100 else "running"
-        else:
-            lowered = detail.lower()
-            if any(token in lowered for token in ("start", "running", "execute")):
-                new_state = "running"
-                # Track this prompt as the last running one for queue polling
-                self._last_running_prompt = prompt_id
-            elif any(token in lowered for token in ("complete", "finish", "done")):
-                new_state = "completed"
-                # Clear the last running prompt when completed
-                if self._last_running_prompt == prompt_id:
-                    self._last_running_prompt = None
-            elif any(token in lowered for token in ("fail", "error", "abort")):
-                new_state = "failed"
-                # Clear the last running prompt on failure
-                if self._last_running_prompt == prompt_id:
-                    self._last_running_prompt = None
 
         self.job_store.upsert(
             job.job_id,

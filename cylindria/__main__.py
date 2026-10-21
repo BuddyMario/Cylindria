@@ -26,6 +26,9 @@ def main():
         settings.dev_save_dir = args.dev_save_dir
 
     logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("cylindria")
+    logger.info("comfyui_base_url: %s", settings.comfyui_base_url)
+    logger.info("number_of_gpus:   %d", settings.number_of_gpus)
 
     app = create_app(settings)
     uvicorn.run(app, host=args.host, port=args.port)
