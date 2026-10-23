@@ -20,6 +20,19 @@ from .jobs import JobStore
 logger = logging.getLogger(__name__)
 
 
+# Progress bands (start%, end%) for the slow nodes of base_workflow.json, in execution
+# order. A band's node fills its band using its step counter. Nodes before the first
+# band ramp progress from 0 to the first band's start by counting started nodes;
+# all other nodes leave progress unchanged. 100% is only set on completion.
+_PROGRESS_BANDS: dict[str, tuple[float, float]] = {
+    "21": (15, 45),  # SamplerCustomAdvanced, first pass
+    "16": (47, 80),  # SamplerCustomAdvanced, second pass (after latent upscale)
+    "25": (80, 95),  # VAEDecode (reports no steps, so it holds at its band start)
+    "41": (95, 99),  # VHS_VideoCombine
+}
+_PRE_BAND_END = min(start for start, _ in _PROGRESS_BANDS.values())
+
+
 class ComfyClient:
     """Thin helper to talk to ComfyUI, with graceful fallbacks."""
 
@@ -44,6 +57,9 @@ class ComfyClient:
         else:
             self._ws_log_dir = None
         self._last_running_prompt: str | None = None
+        # Per prompt_id: number of nodes in the submitted workflow, and nodes seen running.
+        self._node_counts: dict[str, int] = {}
+        self._started_nodes: dict[str, set[str]] = {}
 
     @staticmethod
     def _extract_prompt_id(response: httpx.Response) -> str | None:
@@ -185,67 +201,63 @@ class ComfyClient:
         if job is None:
             return
 
-        event_token = payload.get("type") or payload.get("event") or "update"
-        detail = str(event_token)
-        event_lower = detail.lower()
+        if job.state in ("completed", "failed"):
+            return
 
-        def clamp_percent(value: float | int | None) -> int | None:
-            if not isinstance(value, (int, float)):
-                return None
-            numeric = float(value)
-            if numeric != numeric or numeric in (float('inf'), float('-inf')):
-                return None
-            numeric = max(0.0, min(100.0, numeric))
-            return int(round(numeric))
+        event_type = str(payload.get("type") or payload.get("event") or "").lower()
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return
 
-        progress_percent: int | None = None
+        # Collect (node_id, value, max) for the nodes this event reports as running.
+        running: list[tuple[str, Any, Any]] = []
+        if event_type == "progress":
+            running.append((str(data.get("node")), data.get("value"), data.get("max")))
+        elif event_type == "progress_state":
+            nodes = data.get("nodes")
+            if isinstance(nodes, dict):
+                for node_id, node in nodes.items():
+                    if isinstance(node, dict) and node.get("state") == "running":
+                        running.append((str(node_id), node.get("value"), node.get("max")))
+        if not running:
+            return
 
-        if event_lower == "progress":
-            data = payload.get("data")
-            if isinstance(data, dict):
-                current = data.get("value")
-                total = data.get("max")
-                nodeId = data.get("node")
-                try:
-                    current_value = float(current)
-                    total_value = float(total)
-                    node_value = int(nodeId)
-                except (TypeError, ValueError):
-                    current_value = None
-                    total_value = None
-                else:
-                    if (
-                        current_value == current_value
-                        and total_value == total_value
-                        and total_value > 0
-                    ):
-                        capped_current = max(0.0, min(current_value, total_value))
-                        computed_percent = (capped_current / total_value) * 100.0
-                        if node_value==21:
-                            progress_percent = computed_percent * 0.30
-                        elif node_value==16:
-                            progress_percent = computed_percent * 0.60 + 30
-                        elif node_value==25:
-                            progress_percent = computed_percent * 0.10 + 90
-                        elif total_value < 10:
-                            progress_percent = computed_percent * 0.50
-                        
-                        progress_percent = clamp_percent(progress_percent)
+        started = self._started_nodes.setdefault(prompt_id, set())
+        computed = 0.0
+        for node_id, value, total in running:
+            started.add(node_id)
+            computed = max(computed, self._node_progress(prompt_id, node_id, value, total))
 
-            detail = f"progress ({progress_percent}%)" if progress_percent is not None else "progress"
-
-        new_state = job.state
-        if progress_percent is not None:
-            new_state = "completed" if progress_percent >= 100 else "running"
-
+        # Progress never goes backwards; detail always has the same shape.
+        progress = max(job.progress, min(99, int(computed)))
         self.job_store.upsert(
             job.job_id,
-            state=new_state,
-            detail=detail,
+            state="running",
+            detail=f"progress ({progress}%)",
             prompt_id=prompt_id,
-            progress=progress_percent,
+            progress=progress,
             gpu_id=self.gpu_id,
         )
+
+    def _node_progress(self, prompt_id: str, node_id: str, value: Any, total: Any) -> float:
+        """Overall job progress implied by node_id running at step value/total."""
+        band = _PROGRESS_BANDS.get(node_id)
+        if band is None:
+            # Before any band node starts, ramp toward the first band by started-node count.
+            started = self._started_nodes.get(prompt_id, set())
+            node_count = self._node_counts.get(prompt_id)
+            if not node_count or started & _PROGRESS_BANDS.keys():
+                return 0.0
+            return _PRE_BAND_END * min(1.0, len(started) / node_count)
+
+        start, end = band
+        try:
+            fraction = float(value) / float(total)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return start
+        if fraction != fraction:  # NaN
+            return start
+        return start + (end - start) * max(0.0, min(1.0, fraction))
 
     async def ping(self) -> bool:
         try:
@@ -290,6 +302,9 @@ class ComfyClient:
                     return False, detail
 
                 prompt_id = self._extract_prompt_id(resp)
+                nodes = workflow.get('prompt')
+                if prompt_id and isinstance(nodes, dict):
+                    self._node_counts[prompt_id] = len(nodes)
                 detail = 'Forwarded to ComfyUI'
                 self.job_store.upsert(
                     job_id,
@@ -341,6 +356,8 @@ class ComfyClient:
                 # If there was a previously running prompt and it's no longer running,
                 # mark the job associated with it as completed
                 if self._last_running_prompt:
+                    self._node_counts.pop(self._last_running_prompt, None)
+                    self._started_nodes.pop(self._last_running_prompt, None)
                     job = self.job_store.find_by_prompt_id(self._last_running_prompt, gpu_id=self.gpu_id)
                     if job and job.state in ("running", "submitted"):
                         if (job.progress or 0) >= 80:
