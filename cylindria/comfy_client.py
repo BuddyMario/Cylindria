@@ -268,6 +268,9 @@ class ComfyClient:
 
     _SUBMIT_MAX_ATTEMPTS = 3
     _SUBMIT_RETRY_DELAY = 0.5  # seconds between retries
+    # ComfyUI validates the whole workflow before replying, which can take well over
+    # the default 2 s read timeout on a busy server.
+    _SUBMIT_TIMEOUT = httpx.Timeout(60.0, connect=1.0)
 
     async def submit_workflow(self, job_id: str, workflow: dict[str, Any]) -> Tuple[bool, str | None]:
         """Try to forward a workflow to ComfyUI, retrying on transient errors."""
@@ -286,7 +289,7 @@ class ComfyClient:
         last_exc: Exception | None = None
         for attempt in range(1, self._SUBMIT_MAX_ATTEMPTS + 1):
             try:
-                resp = await self._client.post(url, json=workflow)
+                resp = await self._client.post(url, json=workflow, timeout=self._SUBMIT_TIMEOUT)
                 logger.info(
                     "ComfyUI response job_id=%s gpu_id=%s attempt=%s status=%s body=%s",
                     job_id,
@@ -317,6 +320,11 @@ class ComfyClient:
 
             except Exception as exc:
                 last_exc = exc
+                if not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+                    # The request may have reached ComfyUI and been queued; resending
+                    # would run the job again under a prompt_id we never learn.
+                    logger.error("Submit failed job_id=%s gpu_id=%s: %r", job_id, self.gpu_id, exc)
+                    break
                 logger.warning(
                     "Submit attempt %s/%s failed job_id=%s gpu_id=%s: %s",
                     attempt,
@@ -328,7 +336,7 @@ class ComfyClient:
                 if attempt < self._SUBMIT_MAX_ATTEMPTS:
                     await asyncio.sleep(self._SUBMIT_RETRY_DELAY)
 
-        detail = f"ComfyUI unreachable after {self._SUBMIT_MAX_ATTEMPTS} attempts: {last_exc!r}"
+        detail = f"Submitting to ComfyUI failed: {last_exc!r}"
         self.job_store.upsert(job_id, state='failed', detail=detail, gpu_id=self.gpu_id)
         return False, detail
 
